@@ -1,5 +1,5 @@
 #!/bin/bash
-OPENAI_API_KEY="sk-proj-QCLsWQNcfRvqECvdpv3vT3BlbkFJjes7JUXwVUaVMjbwpp5O"
+OPENAI_API_KEY="YOU'RE OPENAI API KEY"
 
 send_data=""
 function clean_string() {
