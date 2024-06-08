@@ -1,7 +1,10 @@
 #!/bin/bash
-OPENAI_API_KEY="YOU'RE OPENAI API KEY"
+API_KEY="YOUR API KEY"
+URL="https://api.openai.com/v1/chat/completions"
+MODEL_CLI="gpt-3.5-turbo-0125"
+MODEL_ASSISTANT="gpt-3.5-turbo-0125"
 
-send_data=""
+send_data=$(mktemp)
 function clean_string() {
 	clean=$1
 	#I DONT CARE: #Backspace is replaced with \b
@@ -14,34 +17,37 @@ function clean_string() {
 	echo "$clean"
 }
 function get_response() {
-	prompt=$1
-	prompt=$(clean_string "$prompt")
-	new_message='.messages[.messages| length] |= . + {"role": "user", "content": "'$prompt'"}'
-	send_data=$(echo "$send_data" | jq "$new_message")
-	response_data=$(
-		curl -s https://api.openai.com/v1/chat/completions \
+	local prompt=$1
+	local prompt=$(clean_string "$prompt")
+	local new_message='.messages[.messages| length] |= . + {"role": "user", "content": "'$prompt'"}'
+	echo $(cat "$send_data" | jq "$new_message") > $send_data
+	local response_data=$(
+		curl -s $URL \
 			-H "Content-Type: application/json" \
-			-H "Authorization: Bearer $OPENAI_API_KEY" \
-			-d "$send_data"
+			-H "Authorization: Bearer $API_KEY" \
+			-d "$(cat $send_data)"
 	)
-	message=$(echo "$response_data" | jq '.choices[0].message')
-	echo "$(echo $message | jq -r '.content')"
+	local response_message=$(echo "$response_data" | jq '.choices[0].message')
+	local add_response_message='.messages[.messages| length] |= . + '"$response_message"
+	echo $(cat "$send_data" | jq "$add_response_message") > $send_data
+
+	echo "$(echo $response_message | jq -r '.content')"
 }
 function first_message_cli() {
 	read -p "What is your question? " question
-	prompt=$(clean_string "$question")
+	local prompt=$(clean_string "$question")
 	may_run "$prompt"
 }
 function continue_messages() {
 	echo -en '\e[34mYou: \t\e[0m'
-	read input
-	prompt=$input
-	prompt=$(clean_string "$prompt")
+	read -e input
+	local prompt=$input
+	local prompt=$(clean_string "$prompt")
 	may_run "$prompt"
 }
 function may_run() {
-	prompt=$1
-	response_command=$(get_response "$prompt")
+	local prompt=$1
+	local response_command=$(get_response "$prompt")
 	if [ $CLI = true ]; then
 		input_after_cli "$response_command"
 	else
@@ -50,7 +56,7 @@ function may_run() {
 	fi
 }
 function input_after_cli() {
-	response_command=$1
+	local response_command=$1
 	echo \
 'The command to be run is
 "
@@ -84,19 +90,20 @@ Do you wish to:
 CLI=false
 case $1 in 
 	cli)
-		OPENAI_MODEL="gpt-3.5-turbo-0125"
+		OPENAI_MODEL=$MODEL_CLI
 		system_prompt='
 			You are the new interpreter for linux computers. You let the user write a task, and translate that into plug-and-play bash messages, that can be executed by the standard bash interpreter. You NEVER brake the fasad, always responding with the apropriate bash command. 
 
 			The response is a command that can be executed in bash. It is not wraped in quotations or anything similar. You may asume that all popular or applicable cli tools are downloaded and in PATH.
 
 			The current user directory, and the subsequent 3, are:
-			"'$(find -maxdepth 3)'"
-		'
+			```'"$(find . -type d -o -type f | head -n 20)"'
+			```
+			'
 		CLI=true
 		;;
 	assist | "")
-		OPENAI_MODEL="gpt-4"
+		OPENAI_MODEL=$MODEL_ASSISTANT
 		system_prompt="You're an helpful assistant that helps ass musch as you can :)"
 		;;
 	help)
@@ -114,7 +121,7 @@ esac
 
 system_prompt=$(clean_string "$system_prompt")
 
-send_data='
+echo '
 	{
 		"model": "'$OPENAI_MODEL'",
 		"messages": [
@@ -128,7 +135,7 @@ send_data='
 			"type": "text"
 		}
 	}
-'
+' > $send_data
 
 if [ $CLI = true ]; then
 	first_message_cli
